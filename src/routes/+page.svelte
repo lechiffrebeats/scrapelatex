@@ -115,17 +115,26 @@
         align-items: center;
     }
 
-    .paper.a4 {
+   .paper.a4 {
         background: white;
         color: black;
-        width: 210mm; /* A4 Breite */
-        min-height: 297mm; /* A4 Höhe */
-        padding: 25mm; /* Standard LaTeX Margin */
+        width: 210mm;
+        
+        /* 🔥 FIX START 🔥 */
+        min-height: 297mm;       /* Mindestens A4 */
+        height: fit-content;     /* WICHTIG: Wachse mit dem Inhalt! */
+        overflow: hidden;        /* Hält alles zusammen */
+        /* 🔥 FIX END 🔥 */
+        
+        padding: 25mm;
         box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        font-family: 'Cormorant Garamond', serif; /* Sieht aus wie LaTeX */
+        font-family: 'Cormorant Garamond', serif;
         font-size: 12pt;
         line-height: 1.5;
         box-sizing: border-box;
+        
+        /* Damit es unten nicht am Rand klebt beim Scrollen */
+        margin-bottom: 50px; 
     }
 
     /* Fake LaTeX Styling im HTML */
