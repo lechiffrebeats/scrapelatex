@@ -98,7 +98,7 @@
             <img src="/logo.png" alt="ScrapeBoi" class="logo-small" />
             <div class="brand-text">
                 <h1>ScrapeBoi <span class="v-tag">V4</span></h1>
-                <span class="mini-slogan">Trash HTML ➔ Classy LaTeX</span>
+                <span class="mini-slogan">HTML ➔ Classy LaTeX (and it doesnt even use ai...)</span>
             </div>
         </div>
         <form method="POST" on:submit={() => { loading = true; editableLatex = ""; }}>
@@ -116,7 +116,7 @@
             <img src="/logo.png" alt="Logo" class="logo-big" />
             
             <h1 class="hero-title">ScrapeBoi</h1>
-            <p class="hero-tagline">TURN TRASH HTML INTO CLASSY LATEX</p>
+            <p class="hero-tagline">TURN HTML INTO CLASSY LATEX (and it doesnt even use ai...)</p>
             <p class="hero-meme">"Hippity Hoppity, your Data is my Property" 🦝</p>
             
             <form method="POST" class="hero-form" on:submit={() => { loading = true; editableLatex = ""; }}>

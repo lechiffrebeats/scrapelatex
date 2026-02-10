@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 function escapeLatex(text) {
     if (!text) return "";
     return text
-        .replace(/[\u2013\u2014]/g, "-") // Em-Dashes to hyphens
+        .replace(/[\u2013\u2014]/g, "-") 
         .replace(/\\/g, '\\textbackslash{}')
         .replace(/([#$%&_{}])/g, "\\$1")
         .replace(/\^/g, '\\textasciicircum{}')
@@ -30,10 +30,10 @@ function walk($, element, context = {}) {
         else if (type === 'tag') {
             const tagName = el.tagName.toLowerCase();
             
-            // --- CLEANUP: Skip unwanted tags ---
+            // --- CLEANUP LISTE (Erweitert für D&D Beyond) ---
             if (['script', 'style', 'svg', 'button', 'input', 'select', 'textarea', 'iframe', 'noscript', 'nav', 'footer', 'header', 'aside', 'form'].includes(tagName)) return;
 
-            // Check if we are inside a table or link
+            // Kontext Update
             const newContext = { 
                 ...context, 
                 isPre: context.isPre || tagName === 'pre' || tagName === 'code',
@@ -44,40 +44,39 @@ function walk($, element, context = {}) {
             const inner = walk($, el, newContext);
 
             switch (tagName) {
-                // --- BLOCK ELEMENTS ---
+                // Block Elemente
                 case 'div': case 'section': case 'article': case 'main': case 'span': 
                     output += inner; break;
 
-                // --- HEADINGS ---
+                // --- HEADINGS (Der Fix!) ---
                 case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6':
-                    // 🔥 FIX: No Sections inside Tables! Just Bold.
+                    // 🔥 WICHTIG: In Tabellen darf KEIN \section oder \paragraph stehen.
+                    // Stattdessen machen wir es einfach fett und groß.
                     if (newContext.inTable) {
                          output += `\\textbf{${inner}}`;
                     } else {
-                         // Map h1-h6 to LaTeX hierarchy
                          if (tagName === 'h1') output += `\n\\section*{${inner}}\n`;
                          else if (tagName === 'h2') output += `\n\\subsection*{${inner}}\n`;
                          else if (tagName === 'h3') output += `\n\\subsubsection*{${inner}}\n`;
-                         else output += `\n\\paragraph{${inner}} `;
+                         else output += `\n\\paragraph{${inner}} `; // h4-h6
                     }
                     break;
 
-                // --- TEXT STYLES ---
+                // Text Styles
                 case 'b': case 'strong': output += `\\textbf{${inner}}`; break;
                 case 'i': case 'em': output += `\\textit{${inner}}`; break;
                 case 'u': output += `\\underline{${inner}}`; break;
                 case 'small': output += `{\\footnotesize ${inner}}`; break;
 
-                // --- BLOCKS ---
+                // Blocks
                 case 'p': 
                     if(inner.trim().length > 0) output += `\n\n${inner}\n\n`; 
                     break;
                 case 'br': output += ` \\\\ \n`; break;
                 case 'hr': output += `\n\\noindent\\rule{\\textwidth}{0.4pt}\n`; break;
 
-                // --- LISTS ---
+                // Listen
                 case 'ul': 
-                    // Compact lists inside tables to save space
                     output += `\n\\begin{itemize}\n${inner}\\end{itemize}\n`; 
                     break;
                 case 'ol': 
@@ -87,33 +86,29 @@ function walk($, element, context = {}) {
                     output += `  \\item ${inner}\n`; 
                     break;
                 
-                // --- DEFINITION LISTS ---
+                // Definition Lists
                 case 'dl': output += `\n\\begin{description}\n${inner}\\end{description}\n`; break;
                 case 'dt': output += `  \\item[${inner}] `; break;
                 case 'dd': output += ` ${inner}\n`; break;
 
-                // --- LINKS ---
+                // Links
                 case 'a':
                     const href = node.attr('href') || '';
-                    // Prevent nested links or empty links
-                    if (context.inLink || !href) {
+                    if (context.inLink || !href) { // Keine verschachtelten Links
                         output += inner;
                     } else if (href.startsWith('http') || href.startsWith('www')) {
-                        // Safe LaTeX Link
                         output += `\\href{${escapeLatex(href)}}{${inner}}`;
                     } else {
                         output += inner; 
                     }
                     break;
 
-                // --- IMAGES ---
+                // Bilder
                 case 'img':
-                    const alt = escapeLatex(node.attr('alt') || 'Image');
-                    
-                    // 🔥 FIX: LaTeX crashes if \begin{center} is inside \href
-                    // We simply render a text placeholder.
+                    const alt = escapeLatex(node.attr('alt') || 'Img');
+                    // 🔥 FIX: Wenn Bild im Link ist, kein \begin{center} nutzen!
                     if (context.inLink) {
-                         output += ` [IMG: ${alt}] `;
+                         output += ` \\texttt{[IMG: ${alt}]} `;
                     } else if (context.inTable) {
                         output += `\\fbox{\\texttt{[IMG]}}`;
                     } else {
@@ -121,20 +116,23 @@ function walk($, element, context = {}) {
                     }
                     break;
 
-                // --- TABELLEN ---
+                // --- TABELLEN FIX (Wrap Text) ---
                 case 'table':
                      let colCount = 0;
-                     // Count max columns in first few rows to be safe
+                     // Zähle Spalten in den ersten Reihen
                      node.find('tr').slice(0, 3).each((j, row) => {
                         const cells = $(row).find('td, th').length;
                         if(cells > colCount) colCount = cells;
                      });
                      if (colCount === 0) colCount = 1;
 
-                     const colSpec = "|" + "p{0.2\\linewidth}|".repeat(colCount).replace("p{", "l|"); // Simple l columns
+                     // 🔥 FIX: Nutze 'p' (Paragraph) Spalten statt 'l' (Left).
+                     // Das sorgt dafür, dass Text automatisch umbricht.
+                     // Wir teilen die Seitenbreite durch die Anzahl der Spalten (z.B. 0.9 / 2 = 0.45)
+                     const width = (0.9 / colCount).toFixed(2);
+                     const colSpec = "|" + `p{${width}\\linewidth}|`.repeat(colCount);
 
-                     // Use tabularx or standard tabular. longtable is best for scrape.
-                     output += `\n\\begin{center}\\begin{tabular}{|${"l|".repeat(colCount)}}\n\\hline\n${inner}\\end{tabular}\\end{center}\n`;
+                     output += `\n\\begin{center}\\begin{longtable}{${colSpec}}\n\\hline\n${inner}\\end{longtable}\\end{center}\n`;
                      break;
                 
                 case 'tr': 
@@ -151,7 +149,6 @@ function walk($, element, context = {}) {
         }
     });
     
-    // Cleanup: Remove last & in table rows
     return output.replace(/&\s*\\\\/g, "\\\\");
 }
 
@@ -171,27 +168,27 @@ export const actions = {
             const body = await response.text();
             const $ = cheerio.load(body);
 
-            // --- 🧹 AGGRESSIVE CLEANUP 🧹 ---
-            // Remove navigation, ads, sidebars, popups
+            // --- 🧹 AGGRESSIVE CLEANUP FÜR D&D BEYOND & CO 🧹 ---
             const badSelectors = [
                 'script', 'style', 'iframe', 'svg', 'noscript',
                 'nav', 'footer', 'header', 'aside', 'form',
                 '.hidden', '.visually-hidden', '.sr-only', 
-                '#skip-link', '.skip-link', '.skip-to-content', // "Skip to content"
+                '#skip-link', '.skip-link', '.skip-to-content',
                 '.ad-container', '#ad', '.cookie-banner',
-                '.site-bar', '.main-menu', '.megamenu', // D&D Beyond / generic menus
-                '.user-interactions', '.social-share', 
+                // D&D Specifics
+                '.mega-menu', '.main-navigation', '.site-bar', 
+                '.mobile-site-header', '.site-footer', '.social-share',
                 '.breadcrumbs', '.listing-header', '.listing-footer',
-                '.login-widget', '.signup-widget'
+                '.login-widget', '.signup-widget', '.more-info'
             ];
             
             $(badSelectors.join(', ')).remove();
 
-            // Find best content root
+            // Content Root finden
             let contentRoot = $('main');
             if (contentRoot.length === 0) contentRoot = $('article');
-            if (contentRoot.length === 0) contentRoot = $('.content'); // Generic
-            if (contentRoot.length === 0) contentRoot = $('body'); // Fallback
+            if (contentRoot.length === 0) contentRoot = $('.content'); 
+            if (contentRoot.length === 0) contentRoot = $('body');
 
             const latexBody = walk($, contentRoot);
 
@@ -204,7 +201,7 @@ export const actions = {
 \\usepackage{graphicx}
 \\usepackage{xcolor}
 \\usepackage{enumitem}
-\\usepackage{longtable} % Better for long scrapes
+\\usepackage{longtable} % Wichtig für Tabellen über mehrere Seiten
 \\geometry{top=2cm, bottom=2cm, left=2.5cm, right=2.5cm}
 \\setlength{\\parindent}{0pt}
 \\setlength{\\parskip}{1em}
