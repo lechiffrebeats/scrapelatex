@@ -98,7 +98,7 @@
             <img src="/logo.png" alt="ScrapeBoi" class="logo-small" />
             <div class="brand-text">
                 <h1>ScrapeBoi <span class="v-tag">V4</span></h1>
-                <span class="mini-slogan">HTML ➔ Classy LaTeX (and it doesnt even use ai...)</span>
+                <span class="mini-slogan">HTML ➔ LaTeX</span>
             </div>
         </div>
         <form method="POST" on:submit={() => { loading = true; editableLatex = ""; }}>
@@ -116,8 +116,9 @@
             <img src="/logo.png" alt="Logo" class="logo-big" />
             
             <h1 class="hero-title">ScrapeBoi</h1>
-            <p class="hero-tagline">TURN HTML INTO CLASSY LATEX (and it doesnt even use ai...)</p>
-            <p class="hero-meme">"Hippity Hoppity, your Data is my Property" 🦝</p>
+            <p class="hero-tagline">TURN HTML INTO LATEX </p>
+            <p class="hero-meme">"(and it doesnt even use ai...)" 🦝</p>
+            <p></p>
             
             <form method="POST" class="hero-form" on:submit={() => { loading = true; editableLatex = ""; }}>
                 <input type="url" name="url" placeholder="https://letterboxd.com/..." required autocomplete="off" />
