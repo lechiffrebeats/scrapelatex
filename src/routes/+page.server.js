@@ -3,6 +3,8 @@ import * as cheerio from 'cheerio';
 function escapeLatex(text) {
     if (!text) return "";
     return text
+        // 🔥 FIX 3: Gedankenstriche zu Minus machen (für Kompilierung)
+        .replace(/[\u2013\u2014]/g, "-") 
         .replace(/\\/g, '\\textbackslash{}')
         .replace(/([#$%&_{}])/g, "\\$1")
         .replace(/\^/g, '\\textasciicircum{}')
@@ -22,7 +24,6 @@ function walk($, element, context = {}) {
             if (context.isPre) {
                 output += text; 
             } else {
-                // Smart Whitespace: Newlines zu Spaces, aber keine Doppel-Spaces
                 const clean = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
                 if (clean.trim().length > 0) output += escapeLatex(clean);
             }
@@ -31,21 +32,35 @@ function walk($, element, context = {}) {
             const tagName = el.tagName.toLowerCase();
             
             // Ignore Junk
-            if (['script', 'style', 'svg', 'button', 'input', 'select', 'textarea', 'iframe', 'noscript'].includes(tagName)) return;
+            if (['script', 'style', 'svg', 'button', 'input', 'select', 'textarea', 'iframe', 'noscript', 'nav', 'footer', 'header'].includes(tagName)) return;
 
+            // 🔥 Kontext erweitern: Sind wir in einer Tabelle?
             const inner = walk($, el, { 
                 ...context, 
-                isPre: context.isPre || tagName === 'pre' || tagName === 'code' 
+                isPre: context.isPre || tagName === 'pre' || tagName === 'code',
+                inTable: context.inTable || tagName === 'table' || tagName === 'tr' || tagName === 'td'
             });
 
             switch (tagName) {
                 case 'div': case 'section': case 'article': case 'main': case 'span': 
                     output += inner; break;
 
-                case 'h1': output += `\n\\section*{${inner}}\n`; break;
-                case 'h2': output += `\n\\subsection*{${inner}}\n`; break;
-                case 'h3': output += `\n\\subsubsection*{${inner}}\n`; break;
-                case 'h4': case 'h5': case 'h6': output += `\n\\paragraph{${inner}} `; break;
+                // 🔥 FIX 2: Headings in Tabellen verhindern
+                case 'h1': 
+                    if(context.inTable) output += `\\textbf{\\large ${inner}}`;
+                    else output += `\n\\section*{${inner}}\n`; 
+                    break;
+                case 'h2': 
+                    if(context.inTable) output += `\\textbf{${inner}}`;
+                    else output += `\n\\subsection*{${inner}}\n`; 
+                    break;
+                case 'h3': 
+                    if(context.inTable) output += `\\textbf{${inner}}`;
+                    else output += `\n\\subsubsection*{${inner}}\n`; 
+                    break;
+                case 'h4': case 'h5': case 'h6': 
+                    output += `\n\\paragraph{${inner}} `; 
+                    break;
 
                 case 'b': case 'strong': output += `\\textbf{${inner}}`; break;
                 case 'i': case 'em': output += `\\textit{${inner}}`; break;
@@ -58,7 +73,10 @@ function walk($, element, context = {}) {
                 case 'br': output += ` \\\\ \n`; break;
                 case 'hr': output += `\n\\noindent\\rule{\\textwidth}{0.4pt}\n`; break;
 
-                case 'ul': output += `\n\\begin{itemize}\n${inner}\\end{itemize}\n`; break;
+                case 'ul': 
+                    // Listen in Tabellen sind hässlich, aber wir lassen es mal zu (oder machen compactitem)
+                    output += `\n\\begin{itemize}\n${inner}\\end{itemize}\n`; 
+                    break;
                 case 'ol': output += `\n\\begin{enumerate}\n${inner}\\end{enumerate}\n`; break;
                 case 'li': output += `  \\item ${inner}\n`; break;
                 
@@ -77,23 +95,47 @@ function walk($, element, context = {}) {
 
                 case 'img':
                     const alt = escapeLatex(node.attr('alt') || 'Bild');
-                    // Minimaler Platzhalter
-                    output += `\n\\begin{center}\\fbox{\\texttt{[IMG: ${alt}]}}\\end{center}\n`;
+                    // In Tabellen keine Center-Umgebung nutzen, das knallt
+                    if (context.inTable) {
+                        output += `\\fbox{\\texttt{[IMG]}}`;
+                    } else {
+                        output += `\n\\begin{center}\\fbox{\\texttt{[IMG: ${alt}]}}\\end{center}\n`;
+                    }
                     break;
 
+                // --- 🔥 FIX 1: TABELLEN LOGIK ---
                 case 'table':
-                     output += `\n\\begin{center}\\begin{tabular}{|l|}\n\\hline\n${inner}\\end{tabular}\\end{center}\n`;
+                     // Spalten zählen (anhand der ersten Zeile)
+                     let colCount = 0;
+                     const firstRow = node.find('tr').first();
+                     if (firstRow.length) {
+                         colCount = firstRow.find('td, th').length;
+                     }
+                     // Fallback falls keine Zeilen gefunden (sollte nicht passieren)
+                     if (colCount === 0) colCount = 1;
+
+                     // Baue String: |l|l|l|...
+                     const colSpec = "|" + "l|".repeat(colCount);
+
+                     output += `\n\\begin{center}\\begin{tabular}{${colSpec}}\n\\hline\n${inner}\\end{tabular}\\end{center}\n`;
                      break;
-                case 'tr': output += `${inner} \\\\ \\hline\n`; break;
-                case 'td': case 'th': output += `${inner} & `; break;
+                
+                case 'tr': 
+                    output += `${inner} \\\\ \\hline\n`; 
+                    break;
+                
+                case 'td': case 'th': 
+                    output += `${inner} & `; 
+                    break;
 
                 default:
                     output += inner; 
             }
         }
     });
-    // Fix table rows ending with &
-    return output.replace(/& \s*\\\\/g, "\\\\");
+    
+    // Cleanup: Letztes "&" in einer Tabellenzeile entfernen, bevor "\\" kommt
+    return output.replace(/&\s*\\\\/g, "\\\\"); 
 }
 
 export const actions = {
@@ -110,7 +152,7 @@ export const actions = {
             const body = await response.text();
             const $ = cheerio.load(body);
 
-            // Brutales Cleanup
+            // Cleanup
             $('script, style, iframe, svg, noscript, nav, footer, header').remove();
             $('.hidden, .visually-hidden, .ad-container, #ad, .cookie-banner').remove();
 

@@ -1,327 +1,266 @@
 <script>
     export let form;
+    
     let loading = false;
+    let editableLatex = ""; 
+    let hasScraped = false; // State für Landing Page vs. Editor Mode
 
-    // Einfache Copy-Funktion mit visuellem Feedback
-    let copyText = "COPY LATEX";
-    function copyToClipboard() {
-        if(!form?.latex) return;
-        navigator.clipboard.writeText(form.latex);
-        copyText = "COPIED! 🚀";
-        setTimeout(() => copyText = "COPY LATEX", 2000);
+    // Wenn Daten vom Server kommen, laden wir sie
+    $: if (form?.latex && !editableLatex) {
+        editableLatex = form.latex;
+        hasScraped = true; // Umschalten auf Editor Ansicht
     }
+
+    // --- 🧠 FAKE COMPILER V3 (TABLE EDITION) ---
+    function compileLatex(tex) {
+        if (!tex) return "";
+
+        // 1. Preamble Killer
+        let bodyContent = tex;
+        const startMatch = tex.match(/\\begin\{document\}/);
+        const endMatch = tex.match(/\\end\{document\}/);
+        if (startMatch) bodyContent = tex.substring(startMatch.index + startMatch[0].length);
+        if (endMatch) bodyContent = bodyContent.substring(0, bodyContent.indexOf(endMatch[0]));
+
+        let html = bodyContent
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;") // Safety First
+
+            // --- TABELLEN MAGIE (Der schwere Teil) ---
+            // Wir suchen nach tabular Umgebungen und parsen den Inhalt
+            .replace(/\\begin\{tabular\}\{.*?\}([\s\S]*?)\\end\{tabular\}/g, (match, content) => {
+                // Zeilen splitten bei \\ (aber Vorsicht bei Escaping, hier einfach gehalten)
+                let rows = content.split('\\\\');
+                let tableHtml = '<table class="preview-table">';
+                
+                rows.forEach(row => {
+                    if (row.trim() === '') return;
+                    if (row.includes('\\hline')) return; // Linien ignorieren wir visuell via CSS
+
+                    tableHtml += '<tr>';
+                    // Zellen splitten bei &
+                    let cells = row.split('&');
+                    cells.forEach(cell => {
+                        // Cleanup pro Zelle
+                        let cleanCell = cell.replace(/\\hline/g, '').trim();
+                        tableHtml += `<td>${cleanCell}</td>`;
+                    });
+                    tableHtml += '</tr>';
+                });
+                tableHtml += '</table>';
+                return tableHtml;
+            })
+            // Center Umgebung für Tabellen aufräumen
+            .replace(/\\begin\{center\}/g, '<div class="center-wrapper">')
+            .replace(/\\end\{center\}/g, '</div>')
+
+            // --- STANDARD ZEUG ---
+            .replace(/\\maketitle/g, '<div class="title-placeholder"></div>')
+            .replace(/\\tableofcontents/g, '')
+            .replace(/\\newpage/g, '<div class="page-break"></div>')
+            
+            // Text Styles
+            .replace(/\\section\*?\{(.*?)\}/g, '<h1>$1</h1>')
+            .replace(/\\subsection\*?\{(.*?)\}/g, '<h2>$1</h2>')
+            .replace(/\\subsubsection\*?\{(.*?)\}/g, '<h3>$1</h3>')
+            .replace(/\\paragraph\*?\{(.*?)\}/g, '<h4>$1</h4>')
+            .replace(/\\textbf\{(.*?)\}/g, '<b>$1</b>')
+            .replace(/\\textit\{(.*?)\}/g, '<i>$1</i>')
+            .replace(/\\underline\{(.*?)\}/g, '<u>$1</u>')
+            .replace(/\\texttt\{(.*?)\}/g, '<code>$1</code>')
+
+            // Links & Bilder
+            .replace(/\\href\{.*?\}/g, '') // Links killen, Inhalt behalten (passiert automatisch durch Regex-Reste)
+            .replace(/\\fbox\{.*?IMG: (.*?)\}\}/g, '<div class="img-placeholder">🖼️ $1</div>')
+            .replace(/\\fbox\{.*?IMG: (.*?)\]/g, '<div class="img-placeholder">🖼️ $1</div>')
+
+            // Listen
+            .replace(/\\begin\{itemize\}/g, '<ul>')
+            .replace(/\\end\{itemize\}/g, '</ul>')
+            .replace(/\\begin\{enumerate\}/g, '<ol>')
+            .replace(/\\end\{enumerate\}/g, '</ol>')
+            .replace(/\\item\s/g, '<li>')
+            .replace(/\\item\[(.*?)\]/g, '<li><b>$1:</b>')
+
+            // Cleanup
+            .replace(/\\\\/g, '<br>')
+            .replace(/\\/g, '') 
+            .replace(/}/g, '')
+            .replace(/{/g, '')
+            .replace(/\n\s*\n/g, '<br><br>');
+
+        return html;
+    }
+
+    $: previewHtml = compileLatex(editableLatex);
+
+    function downloadTex() {
+        const blob = new Blob([editableLatex], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'scrapeboi_export.tex';
+        a.click();
+    }
+
+    function printToPdf() { window.print(); }
 </script>
 
-<div class="app-container">
+<div class="app-container" class:centered-mode={!hasScraped}>
+    
+    {#if hasScraped}
     <header>
-        <div class="brand">
-            <span class="icon">🦄</span>
-            <div class="titles">
-                <h1>LATEX SCRAPER <span class="version">V3</span></h1>
-                <p>Web to PDF Converter // Mobile Ready</p>
+        <div class="header-left">
+            <img src="/logo.png" alt="ScrapeBoi" class="logo-small" />
+            <div class="brand-text">
+                <h1>ScrapeBoi <span class="v-tag">V4</span></h1>
             </div>
         </div>
-
-        <form method="POST" on:submit={() => loading = true}>
-            <div class="input-group">
-                <input 
-                    type="url" 
-                    name="url" 
-                    placeholder="https://letterboxd.com/dein_profil/" 
-                    required 
-                    autocomplete="off"
-                />
-                <button disabled={loading}>
-                    {#if loading}
-                        <span class="spinner">⚙️</span> LOADING...
-                    {:else}
-                        SCRAPE IT 🔥
-                    {/if}
-                </button>
-            </div>
+        <form method="POST" on:submit={() => { loading = true; editableLatex = ""; }}>
+            <input type="url" name="url" placeholder="Neue URL..." required autocomplete="off" />
+            <button disabled={loading} class:stealing={loading}>
+                {loading ? 'YOINKING...' : 'SCRAPE IT 🔥'}
+            </button>
         </form>
-
-        {#if form?.error}
-            <div class="status error">💀 ERROR: {form.error}</div>
-        {/if}
     </header>
+    {/if}
 
-    {#if form?.success}
-    <main class="grid-layout">
-        
-        <section class="panel code-panel">
-            <div class="panel-header">
-                <h2>📦 LaTeX Source</h2>
-                <button class="copy-btn" on:click={copyToClipboard}>{copyText}</button>
+    {#if !hasScraped}
+    <div class="landing-hero">
+        <div class="hero-content">
+            <img src="/logo.png" alt="ScrapeBoi Big Logo" class="logo-big" />
+            <h1 class="hero-title">ScrapeBoi</h1>
+            <p class="hero-subtitle">"Hippity Hoppity, your Data is my Property" 🦝</p>
+            <span class="hero-badge">HTML TO LATEX CONVERTER // MEME EDITION</span>
+            
+            <form method="POST" class="hero-form" on:submit={() => { loading = true; editableLatex = ""; }}>
+                <input type="url" name="url" placeholder="Paste link here (e.g. Letterboxd, DnD Beyond)..." required autocomplete="off" />
+                <button disabled={loading} class:stealing={loading}>
+                    {loading ? 'STEALING DATA...' : 'START HEIST 🚀'}
+                </button>
+            </form>
+            
+            {#if form?.error}
+                <div class="hero-error">💀 {form.error}</div>
+            {/if}
+        </div>
+    </div>
+    {/if}
+
+    {#if hasScraped}
+    <main class="split-layout">
+        <section class="panel editor-panel">
+            <div class="toolbar">
+                <span>📝 LaTeX Source</span>
+                <button on:click={downloadTex}>⬇ .TEX</button>
             </div>
-            <div class="editor-wrapper">
-                <textarea readonly spellcheck="false">{form.latex}</textarea>
-            </div>
+            <textarea bind:value={editableLatex} spellcheck="false"></textarea>
         </section>
 
         <section class="panel preview-panel">
-            <div class="panel-header">
-                <h2>📄 Live Preview (A4)</h2>
-                <span class="badge">Visual Check</span>
+            <div class="toolbar">
+                <span>📄 Live Preview</span>
+                <button on:click={printToPdf}>🖨 PDF</button>
             </div>
-            
-            <div class="paper-scroll-wrapper">
+            <div class="scroll-container">
                 <div class="paper a4">
-                    <div class="paper-header">Scrape God Output <br><small>{new Date().toLocaleDateString()}</small></div>
-                    <hr class="paper-hr">
-                    
-                    <div class="paper-content">
-                        {@html form.preview}
+                    <div class="paper-header">
+                        <h1>Scrape Output</h1>
+                        <small>{new Date().toLocaleDateString()}</small>
+                        <hr>
+                    </div>
+                    <div class="paper-body">
+                        {@html previewHtml}
+                    </div>
+                    <div class="paper-footer">
+                        Generated by ScrapeBoi V4
                     </div>
                 </div>
             </div>
         </section>
-
     </main>
     {/if}
 </div>
 
 <style>
-    /* --- VARIABLES & RESET --- */
-    :global(*) { box-sizing: border-box; }
-    :global(body) {
-        margin: 0;
-        background-color: #050505;
-        color: #e0e0e0;
-        font-family: 'JetBrains Mono', monospace;
-        overflow-x: hidden;
-    }
+    /* VARIABLES */
+    :global(body) { margin: 0; background: #050505; color: #fff; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+    
+    .app-container { display: flex; flex-direction: column; height: 100vh; }
 
-    /* --- LAYOUT --- */
-    .app-container {
+    /* --- LANDING PAGE STYLES --- */
+    .landing-hero {
+        flex: 1;
         display: flex;
-        flex-direction: column;
-        height: 100vh;
-    }
-
-    /* --- HEADER --- */
-    header {
-        background: #0a0a0a;
-        border-bottom: 2px solid #333;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 15px;
-        z-index: 10;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+        justify-content: center;
+        background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
     }
-
-    .brand { display: flex; align-items: center; gap: 15px; }
-    .icon { font-size: 2.5rem; }
-    h1 { margin: 0; font-size: 1.5rem; color: #fff; letter-spacing: -1px; }
-    .version { color: magenta; font-size: 0.8em; vertical-align: super; }
-    p { margin: 0; color: #666; font-size: 0.8rem; }
-
-    .input-group {
-        display: flex;
-        width: 100%;
-        max-width: 600px;
-        gap: 10px;
-    }
-
-    input {
-        flex: 1;
-        padding: 12px;
-        background: #111;
-        border: 1px solid #333;
-        color: cyan;
-        font-family: inherit;
-        font-size: 1rem;
-        border-radius: 4px;
-        outline: none;
-    }
-    input:focus { border-color: magenta; box-shadow: 0 0 10px rgba(255, 0, 255, 0.2); }
-
-    button {
-        padding: 0 25px;
-        background: magenta;
-        color: white;
-        border: none;
-        font-weight: bold;
-        font-family: inherit;
-        cursor: pointer;
-        border-radius: 4px;
-        transition: all 0.2s;
-    }
-    button:hover { background: #ff4dff; transform: translateY(-2px); }
-    button:disabled { background: #555; cursor: wait; transform: none; }
-
-    .status.error { color: #ff3333; font-weight: bold; margin-top: 10px; border: 1px solid #ff3333; padding: 10px; }
-
-    /* --- MAIN GRID --- */
-    .grid-layout {
-        flex: 1;
-        display: grid;
-        grid-template-columns: 1fr 1fr; /* Default: Desktop Split */
-        overflow: hidden; /* Prevent body scroll */
-    }
-
-    .panel {
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        border-right: 1px solid #222;
-    }
-
-    .panel-header {
-        padding: 10px 20px;
-        background: #0f0f0f;
-        border-bottom: 1px solid #222;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        height: 50px;
-    }
-
-    .panel-header h2 { margin: 0; font-size: 1rem; color: #888; text-transform: uppercase; }
-
-    /* --- EDITOR (LEFT) --- */
-    .editor-wrapper {
-        flex: 1;
-        position: relative;
-    }
+    .hero-content { text-align: center; max-width: 600px; width: 100%; padding: 20px; }
+    .logo-big { width: 150px; height: auto; margin-bottom: 20px; filter: drop-shadow(0 0 20px rgba(255,0,255,0.3)); animation: float 3s ease-in-out infinite; }
+    @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
     
-    textarea {
-        width: 100%;
-        height: 100%;
-        background: #080808;
-        color: #0f0; /* Matrix Green */
-        border: none;
-        padding: 20px;
-        resize: none;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.9rem;
-        line-height: 1.5;
-        white-space: pre;
-        outline: none;
-    }
+    .hero-title { font-size: 4rem; margin: 0; background: linear-gradient(to right, #ff00ff, #00ffff); -webkit-background-clip: text; color: transparent; font-weight: 900; letter-spacing: -2px; }
+    .hero-subtitle { font-size: 1.2rem; color: #888; margin: 10px 0 30px; font-style: italic; }
+    .hero-badge { background: #222; color: #00ff00; padding: 5px 10px; border-radius: 4px; font-size: 0.8rem; font-family: monospace; letter-spacing: 1px; }
 
-    .copy-btn {
-        background: #222;
-        border: 1px solid #444;
-        font-size: 0.7rem;
-        padding: 5px 10px;
-        color: cyan;
-    }
-    .copy-btn:hover { background: cyan; color: black; }
+    .hero-form { margin-top: 40px; display: flex; flex-direction: column; gap: 15px; }
+    .hero-form input { padding: 20px; font-size: 1.2rem; background: #111; border: 2px solid #333; border-radius: 8px; color: white; text-align: center; }
+    .hero-form input:focus { border-color: magenta; outline: none; box-shadow: 0 0 30px rgba(255,0,255,0.2); }
+    .hero-form button { padding: 20px; font-size: 1.2rem; background: magenta; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: transform 0.1s; }
+    .hero-form button:hover { transform: scale(1.02); background: #ff33ff; }
+    .hero-error { color: red; margin-top: 20px; background: rgba(255,0,0,0.1); padding: 10px; border-radius: 4px; }
 
-    /* --- PREVIEW (RIGHT) --- */
-    .preview-panel {
-        background: #1a1a1a;
-        position: relative;
-    }
-
-    .paper-scroll-wrapper {
-        flex: 1;
-        overflow-y: auto; /* Vertikales Scrollen */
-        overflow-x: auto; /* Horizontales Scrollen auf Mobile */
-        padding: 40px;
-        display: flex;
-        justify-content: center; /* Zentriert Paper auf Desktop */
-        align-items: flex-start;
-    }
-
-    /* --- PAPIER PHYSIK (Overleaf Style) --- */
-    .paper.a4 {
-        width: 210mm;
-        min-width: 210mm;
-        min-height: 297mm; /* Startet mit einer Seite */
-        
-        /* 🔥 MAGIC: Der Fake-Seiten-Look 🔥 */
-        /* Wir zeichnen weiße Seiten (297mm) getrennt durch graue Lücken (10mm) */
-        background-image: linear-gradient(
-            to bottom,
-            #ffffff 0mm, 
-            #ffffff 297mm, 
-            #555555 297mm,       /* Schnittkante Farbe */
-            #555555 307mm        /* 10mm Lücke */
-        );
-        background-size: 100% 307mm; /* Muster wiederholt sich alle 307mm */
-        background-repeat: repeat-y;
-        
-        /* Schatten nur an den Seiten, damit es "schwebt" */
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        
-        /* Padding oben/unten muss passen, damit Text nicht im Grauen startet */
-        padding: 25mm; 
-        
-        /* Typo */
-        color: black;
-        font-family: 'Crimson Text', serif;
-        font-size: 12pt;
-        line-height: 1.4;
-        
-        /* Hack: Damit der letzte graue Balken unten nicht komisch aussieht */
-        margin-bottom: 50px; 
-    }
-
-    /* Kleiner Indikator wo die Seite aufhört (Rote Linie beim Drüberhovern optional) */
-    .paper.a4:hover {
-        background-image: linear-gradient(
-            to bottom,
-            #ffffff 0mm, 
-            #ffffff 296mm,       
-            rgba(255, 0, 0, 0.2) 296mm, /* Warn-Linie kurz vor Ende */
-            #555555 297mm,       
-            #555555 307mm        
-        );
-    }
-
-    .paper-header { text-align: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 10px; }
-    .paper-hr { border: 0; border-top: 2px solid black; margin-bottom: 30px; }
+    /* --- EDITOR STYLES --- */
+    header { height: 60px; background: #000; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo-small { height: 30px; }
+    .brand-text h1 { font-size: 1.2rem; margin: 0; }
     
-    /* Paper Content Styling */
-    .paper :global(h1) { font-size: 1.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.2em; }
-    .paper :global(h2) { font-size: 1.3em; margin-top: 1.5em; }
-    .paper :global(.center) { text-align: center; }
-    .paper :global(ul), .paper :global(ol) { padding-left: 20px; }
-    .paper :global(a) { color: #0000cc; text-decoration: underline; }
+    /* Header Form (Compact) */
+    header form { display: flex; gap: 10px; }
+    header input { background: #222; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; width: 300px; }
+    header button { background: magenta; border: none; color: white; padding: 0 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
 
-.paper :global(img), .paper :global(.fbox) {
-        break-inside: avoid;
-        page-break-inside: avoid;
-    }
+    .split-layout { flex: 1; display: flex; overflow: hidden; }
+    .panel { width: 50%; display: flex; flex-direction: column; border-right: 1px solid #222; }
+    .toolbar { height: 40px; background: #111; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; border-bottom: 1px solid #333; color: #666; font-size: 0.9rem; }
+    .toolbar button { background: #333; border: 1px solid #444; color: white; padding: 4px 10px; cursor: pointer; font-size: 0.75rem; }
+
+    textarea { flex: 1; background: #080808; color: #0f0; border: none; padding: 20px; resize: none; outline: none; font-family: 'Courier New', monospace; line-height: 1.5; }
+
+    /* PREVIEW & TABLE FIXES */
+    .preview-panel { background: #333; }
+    .scroll-container { flex: 1; overflow-y: auto; padding: 40px; display: flex; justify-content: center; }
     
-    /* Absätze zusammenhalten */
-    .paper :global(p) {
-        break-inside: avoid;
+    .paper.a4 { 
+        background-color: white; width: 210mm; min-height: 297mm; height: fit-content; 
+        padding: 20mm; box-shadow: 0 0 20px rgba(0,0,0,0.5); color: black; font-family: 'Times New Roman', serif; line-height: 1.4;
+        background-image: linear-gradient(to bottom, #fff 0mm, #fff 297mm, #ccc 297mm, #ccc 298mm);
+        background-size: 100% 298mm; background-repeat: repeat-y;
     }
 
-    /* --- MOBILE RESPONSIVE --- */
-    @media (max-width: 900px) {
-        .grid-layout {
-            grid-template-columns: 1fr; /* Alles untereinander */
-            overflow-y: auto; /* Body scrollt jetzt */
-            height: auto;
-        }
+    .paper-header h1 { text-align: center; font-size: 24pt; margin: 0; }
+    .paper-header small { display: block; text-align: center; color: #555; margin-bottom: 10px; }
+    
+    /* 🔥 TABLE STYLING 🔥 */
+    .paper :global(.preview-table) { 
+        width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 10pt; 
+    }
+    .paper :global(.preview-table td) { 
+        border: 1px solid #000; padding: 5px 10px; vertical-align: top;
+    }
+    .paper :global(.preview-table tr:first-child) { font-weight: bold; background: #eee; }
 
-        .app-container {
-            height: auto; /* Container wächst */
-        }
+    .paper :global(h1) { font-size: 18pt; border-bottom: 1px solid black; margin-top: 1.5em; }
+    .paper :global(h2) { font-size: 16pt; margin-top: 1.2em; font-weight: bold; }
+    .paper :global(ul) { padding-left: 20px; }
+    .paper :global(.img-placeholder) { border: 1px dashed #999; padding: 10px; background: #f5f5f5; text-align: center; font-size: 0.8rem; margin: 10px 0; }
 
-        .panel {
-            height: 500px; /* Fixe Höhe für Editor */
-            border-right: none;
-            border-bottom: 1px solid #333;
-        }
-
-        .preview-panel {
-            height: auto; /* Preview wächst */
-            padding-bottom: 50px;
-        }
-
-        .paper-scroll-wrapper {
-            padding: 20px;
-            display: block; /* Auf Mobile Block, damit Scrollen geht */
-        }
-        
-        /* WICHTIG: Auf Mobile ist A4 breiter als der Screen.
-           Deshalb .paper-scroll-wrapper { overflow-x: auto } */
+    @media print {
+        header, .landing-hero, .editor-panel { display: none !important; }
+        .split-layout { display: block; }
+        .preview-panel { width: 100%; background: white; }
+        .scroll-container { padding: 0; display: block; }
+        .paper.a4 { width: 100%; box-shadow: none; margin: 0; padding: 0; background: none; }
     }
 </style>
