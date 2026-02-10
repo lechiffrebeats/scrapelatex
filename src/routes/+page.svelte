@@ -227,21 +227,50 @@
         align-items: flex-start;
     }
 
+    /* --- PAPIER PHYSIK (Overleaf Style) --- */
     .paper.a4 {
-        /* PAPIER PHYSIK */
-        background: white;
-        color: black;
-        width: 210mm; /* A4 Breite fix */
-        min-width: 210mm; /* Damit es nicht schrumpft */
-        min-height: 297mm;
-        height: auto; /* Wächst mit Inhalt */
-        padding: 25mm;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        width: 210mm;
+        min-width: 210mm;
+        min-height: 297mm; /* Startet mit einer Seite */
         
-        /* TYPOGRAPHIE */
+        /* 🔥 MAGIC: Der Fake-Seiten-Look 🔥 */
+        /* Wir zeichnen weiße Seiten (297mm) getrennt durch graue Lücken (10mm) */
+        background-image: linear-gradient(
+            to bottom,
+            #ffffff 0mm, 
+            #ffffff 297mm, 
+            #555555 297mm,       /* Schnittkante Farbe */
+            #555555 307mm        /* 10mm Lücke */
+        );
+        background-size: 100% 307mm; /* Muster wiederholt sich alle 307mm */
+        background-repeat: repeat-y;
+        
+        /* Schatten nur an den Seiten, damit es "schwebt" */
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        
+        /* Padding oben/unten muss passen, damit Text nicht im Grauen startet */
+        padding: 25mm; 
+        
+        /* Typo */
+        color: black;
         font-family: 'Crimson Text', serif;
         font-size: 12pt;
         line-height: 1.4;
+        
+        /* Hack: Damit der letzte graue Balken unten nicht komisch aussieht */
+        margin-bottom: 50px; 
+    }
+
+    /* Kleiner Indikator wo die Seite aufhört (Rote Linie beim Drüberhovern optional) */
+    .paper.a4:hover {
+        background-image: linear-gradient(
+            to bottom,
+            #ffffff 0mm, 
+            #ffffff 296mm,       
+            rgba(255, 0, 0, 0.2) 296mm, /* Warn-Linie kurz vor Ende */
+            #555555 297mm,       
+            #555555 307mm        
+        );
     }
 
     .paper-header { text-align: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 10px; }
@@ -250,10 +279,19 @@
     /* Paper Content Styling */
     .paper :global(h1) { font-size: 1.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.2em; }
     .paper :global(h2) { font-size: 1.3em; margin-top: 1.5em; }
-    .paper :global(img) { display: none; } /* Bilder verstecken, da Platzhalter-Text da ist */
     .paper :global(.center) { text-align: center; }
     .paper :global(ul), .paper :global(ol) { padding-left: 20px; }
     .paper :global(a) { color: #0000cc; text-decoration: underline; }
+
+.paper :global(img), .paper :global(.fbox) {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    /* Absätze zusammenhalten */
+    .paper :global(p) {
+        break-inside: avoid;
+    }
 
     /* --- MOBILE RESPONSIVE --- */
     @media (max-width: 900px) {
