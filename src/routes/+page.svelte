@@ -5,7 +5,8 @@
 
 <div class="main-wrapper">
     <header>
-        <h1>🦄 LaTeX Scraper V2 extra NUR für den milan</h1>
+        <h1>🦄 LaTeX Scraper 3000 </h1>
+        <h2>(extra NUR für den milan)</h2>
         <form method="POST" on:submit={() => loading = true}>
                         <input type="url" name="url" value="https://letterboxd.com/er_ich/" placeholder="https://letterboxd.com/er_ich/..."  required />
             <button disabled={loading}>
