@@ -5,7 +5,7 @@
 
 <div class="main-wrapper">
     <header>
-        <h1>🦄 LaTeX Scraper V2</h1>
+        <h1>🦄 LaTeX Scraper V2 extra NUR für den milan</h1>
         <form method="POST" on:submit={() => loading = true}>
             <input type="url" name="url" placeholder="URL droppen..." required />
             <button disabled={loading}>
@@ -18,7 +18,7 @@
     {#if form?.success}
     <div class="split-view">
         
-        <div class="column code-col">
+        <div class="column code-col">   
             <h3>💻 Der Code (Copy me)</h3>
             <textarea readonly value={form.latex}></textarea>
             <button class="copy-btn" on:click={() => navigator.clipboard.writeText(form.latex)}>
