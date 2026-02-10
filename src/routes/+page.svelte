@@ -1,4 +1,6 @@
 <script>
+    import { goto } from '$app/navigation';
+
     export let form;
     
     let loading = false;
@@ -109,7 +111,7 @@
     
     {#if hasScraped}
     <header>
-        <div class="header-left">
+        <div class="header-left" on:click={ goto("/")}>
             <img src="/logo.png" alt="ScrapeBoi" class="logo-small" />
             <div class="brand-text">
                 <h1>ScrapeBoi <span class="v-tag">V4</span></h1>
