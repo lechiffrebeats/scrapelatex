@@ -7,7 +7,7 @@
     <header>
         <h1>🦄 LaTeX Scraper V2 extra NUR für den milan</h1>
         <form method="POST" on:submit={() => loading = true}>
-            <input type="url" name="url" placeholder="https://letterboxd.com/..." required />
+                        <input type="url" name="url" value="https://letterboxd.com/er_ich/" placeholder="https://letterboxd.com/er_ich/..."  required />
             <button disabled={loading}>
                 {loading ? 'Hacking...' : 'SCRAPE IT'}
             </button>
