@@ -1,61 +1,99 @@
 import * as cheerio from 'cheerio';
 
-// 🛡️ Die Firewall gegen kaputtes LaTeX
 function escapeLatex(text) {
     if (!text) return "";
     return text
-        .replace(/\\/g, '\\textbackslash{}') // Backslash zuerst!
-        .replace(/([#$%&_{}])/g, "\\$1")     // Special Chars
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/([#$%&_{}])/g, "\\$1")
         .replace(/\^/g, '\\textasciicircum{}')
         .replace(/~/g, '\\textasciitilde{}')
-        .replace(/"/g, "''");                // Hübschere Quotes
+        .replace(/"/g, "''");
 }
 
-// 🧠 Das Gehirn: Rekursiver Node-Walker für Inline-Styles (Bold, Italic, Links)
-function parseContent($, element) {
-    let latex = "";
-    
+function walk($, element, context = {}) {
+    let output = "";
+
     $(element).contents().each((i, el) => {
         const type = el.type;
         const node = $(el);
 
         if (type === 'text') {
-            latex += escapeLatex(node.text());
-        } else if (type === 'tag') {
-            const tagName = el.tagName;
+            const text = node.text();
+            if (context.isPre) {
+                output += text; 
+            } else {
+                // Smart Whitespace: Newlines zu Spaces, aber keine Doppel-Spaces
+                const clean = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+                if (clean.trim().length > 0) output += escapeLatex(clean);
+            }
+        } 
+        else if (type === 'tag') {
+            const tagName = el.tagName.toLowerCase();
+            
+            // Ignore Junk
+            if (['script', 'style', 'svg', 'button', 'input', 'select', 'textarea', 'iframe', 'noscript'].includes(tagName)) return;
 
-            // Rekursion: Geh tiefer rein (z.B. <b><i>Text</i></b>)
-            const inner = parseContent($, el);
+            const inner = walk($, el, { 
+                ...context, 
+                isPre: context.isPre || tagName === 'pre' || tagName === 'code' 
+            });
 
             switch (tagName) {
-                case 'strong':
-                case 'b':
-                    latex += `\\textbf{${inner}}`;
+                case 'div': case 'section': case 'article': case 'main': case 'span': 
+                    output += inner; break;
+
+                case 'h1': output += `\n\\section*{${inner}}\n`; break;
+                case 'h2': output += `\n\\subsection*{${inner}}\n`; break;
+                case 'h3': output += `\n\\subsubsection*{${inner}}\n`; break;
+                case 'h4': case 'h5': case 'h6': output += `\n\\paragraph{${inner}} `; break;
+
+                case 'b': case 'strong': output += `\\textbf{${inner}}`; break;
+                case 'i': case 'em': output += `\\textit{${inner}}`; break;
+                case 'u': output += `\\underline{${inner}}`; break;
+                case 'small': output += `{\\footnotesize ${inner}}`; break;
+
+                case 'p': 
+                    if(inner.trim().length > 0) output += `\n\n${inner}\n\n`; 
                     break;
-                case 'em':
-                case 'i':
-                    latex += `\\textit{${inner}}`;
-                    break;
-                case 'u':
-                    latex += `\\underline{${inner}}`;
-                    break;
-                case 'code':
-                    latex += `\\texttt{${inner}}`;
-                    break;
+                case 'br': output += ` \\\\ \n`; break;
+                case 'hr': output += `\n\\noindent\\rule{\\textwidth}{0.4pt}\n`; break;
+
+                case 'ul': output += `\n\\begin{itemize}\n${inner}\\end{itemize}\n`; break;
+                case 'ol': output += `\n\\begin{enumerate}\n${inner}\\end{enumerate}\n`; break;
+                case 'li': output += `  \\item ${inner}\n`; break;
+                
+                case 'dl': output += `\n\\begin{description}\n${inner}\\end{description}\n`; break;
+                case 'dt': output += `  \\item[${inner}] `; break;
+                case 'dd': output += ` ${inner}\n`; break;
+
                 case 'a':
-                    // Wir nehmen nur den Text, Links brechen oft im PDF
-                    // Wer will, kann hier \\href{url}{text} bauen
-                    latex += `\\underline{${inner}}`; 
+                    const href = node.attr('href') || '';
+                    if (href.startsWith('http')) {
+                        output += `\\href{${escapeLatex(href)}}{${inner}}`;
+                    } else {
+                        output += inner; 
+                    }
                     break;
-                case 'br':
-                    latex += ` \\\\ \n`;
+
+                case 'img':
+                    const alt = escapeLatex(node.attr('alt') || 'Bild');
+                    // Minimaler Platzhalter
+                    output += `\n\\begin{center}\\fbox{\\texttt{[IMG: ${alt}]}}\\end{center}\n`;
                     break;
+
+                case 'table':
+                     output += `\n\\begin{center}\\begin{tabular}{|l|}\n\\hline\n${inner}\\end{tabular}\\end{center}\n`;
+                     break;
+                case 'tr': output += `${inner} \\\\ \\hline\n`; break;
+                case 'td': case 'th': output += `${inner} & `; break;
+
                 default:
-                    latex += inner; // Unbekannte Tags einfach ignorieren, aber Inhalt behalten
+                    output += inner; 
             }
         }
     });
-    return latex;
+    // Fix table rows ending with &
+    return output.replace(/& \s*\\\\/g, "\\\\");
 }
 
 export const actions = {
@@ -63,112 +101,47 @@ export const actions = {
         const formData = await request.formData();
         const url = formData.get('url');
 
-        if (!url) return { error: "Keine URL, Bruder." };
+        if (!url) return { error: "Keine URL." };
 
         try {
-            // 1. Fetch mit User-Agent (damit wir nicht wie ein Bot aussehen)
             const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
             });
             const body = await response.text();
             const $ = cheerio.load(body);
-            
-            let latexBody = "";
-            let previewHtml = "";
 
-            // 2. Wir suchen jetzt viel mehr Elemente!
-            // Main Content Area suchen (optional, macht es sauberer)
-            const root = $('article').length ? $('article') : $('body');
+            // Brutales Cleanup
+            $('script, style, iframe, svg, noscript, nav, footer, header').remove();
+            $('.hidden, .visually-hidden, .ad-container, #ad, .cookie-banner').remove();
 
-            root.find('h1, h2, h3, p, ul, ol, blockquote, pre').each((i, el) => {
-                const $el = $(el);
-                
-                // Skip leere Elemente oder Navigation/Footer Müll (heuristisch)
-                if ($el.text().trim().length === 0) return;
-                if ($el.parents('nav, footer, script, style').length) return;
+            const contentRoot = $('body'); 
+            const latexBody = walk($, contentRoot);
 
-                const tagName = el.tagName;
-                
-                // Parse den Inhalt (mit Bold, Italic etc.)
-                const content = parseContent($, el);
-
-                // Block-Logik
-                if (tagName === 'h1') {
-                    latexBody += `\\section*{${content}}\n`;
-                    previewHtml += `<h1>${$el.html()}</h1>`; // HTML lassen wir original für Preview
-                } 
-                else if (tagName === 'h2') {
-                    latexBody += `\\subsection*{${content}}\n`;
-                    previewHtml += `<h2>${$el.html()}</h2>`;
-                } 
-                else if (tagName === 'h3') {
-                    latexBody += `\\subsubsection*{${content}}\n`;
-                    previewHtml += `<h3>${$el.html()}</h3>`;
-                } 
-                else if (tagName === 'p') {
-                    latexBody += `${content}\n\n`;
-                    previewHtml += `<p>${$el.html()}</p>`;
-                } 
-                else if (tagName === 'blockquote') {
-                    latexBody += `\\begin{quote}\n${content}\n\\end{quote}\n\n`;
-                    previewHtml += `<blockquote>${$el.html()}</blockquote>`;
-                }
-                else if (tagName === 'ul') {
-                    latexBody += `\\begin{itemize}\n`;
-                    previewHtml += `<ul>`;
-                    
-                    $el.find('> li').each((j, li) => {
-                        const liContent = parseContent($, li);
-                        latexBody += `  \\item ${liContent}\n`;
-                        previewHtml += `<li>${$(li).html()}</li>`;
-                    });
-                    
-                    latexBody += `\\end{itemize}\n\n`;
-                    previewHtml += `</ul>`;
-                }
-                else if (tagName === 'ol') {
-                    latexBody += `\\begin{enumerate}\n`;
-                    previewHtml += `<ol>`;
-                    
-                    $el.find('> li').each((j, li) => {
-                        const liContent = parseContent($, li);
-                        latexBody += `  \\item ${liContent}\n`;
-                        previewHtml += `<li>${$(li).html()}</li>`;
-                    });
-                    
-                    latexBody += `\\end{enumerate}\n\n`;
-                    previewHtml += `</ol>`;
-                }
-            });
-
-            // 3. Header Upgrade
             const fullLatex = `
-\\documentclass[12pt]{article}
+\\documentclass[10pt, a4paper]{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage[T1]{fontenc}
 \\usepackage{geometry}
+\\usepackage{hyperref}
+\\usepackage{graphicx}
 \\usepackage{xcolor}
-\\usepackage{listings}     % Für Code
-\\usepackage{hyperref}     % Für Links
-\\geometry{a4paper, margin=2.5cm}
+\\usepackage{enumitem}
+\\geometry{top=2cm, bottom=2cm, left=2.5cm, right=2.5cm}
+\\setlength{\\parindent}{0pt}
+\\setlength{\\parskip}{1em}
 
-\\title{Deep Scrape: ${escapeLatex(url)}}
-\\author{Scrape God V2}
+\\title{Scrape: ${escapeLatex(url)}}
 \\date{\\today}
 
 \\begin{document}
 \\maketitle
-
 ${latexBody}
 \\end{document}`;
 
-            return { latex: fullLatex, preview: previewHtml, success: true };
+            return { latex: fullLatex, preview: contentRoot.html(), success: true };
 
         } catch (err) {
-            console.error(err);
-            return { error: "Scrape Failed. Site has hands. " + err.message };
+            return { error: err.message };
         }
     }
 };
